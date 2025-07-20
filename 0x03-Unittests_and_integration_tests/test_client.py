@@ -204,3 +204,38 @@ class TestIntegrationGithubOrgClient(unittest.TestCase):
     def test_public_repos_with_license(self):
         client = GithubOrgClient("google")
         self.assertEqual(client.public_repos(license="apache-2.0"), self.apache2_repos)
+@parameterized_class([
+    {
+        "org_payload": org_payload,
+        "repos_payload": repos_payload,
+        "expected_repos": expected_repos,
+        "apache2_repos": apache2_repos,
+    }
+])
+class TestIntegrationGithubOrgClient(unittest.TestCase):
+    """Integration tests for GithubOrgClient"""
+
+    @classmethod
+    def setUpClass(cls):
+        """Set up mock for requests.get"""
+        cls.get_patcher = patch("requests.get")
+        cls.mock_get = cls.get_patcher.start()
+        cls.mock_get.side_effect = [
+            MagicMock(json=lambda: cls.org_payload),
+            MagicMock(json=lambda: cls.repos_payload),
+        ]
+
+    @classmethod
+    def tearDownClass(cls):
+        """Stop patcher"""
+        cls.get_patcher.stop()
+
+    def test_public_repos(self):
+        """Test public_repos returns expected repo names"""
+        client = GithubOrgClient("test-org")
+        self.assertEqual(client.public_repos(), self.expected_repos)
+
+    def test_public_repos_with_license(self):
+        """Test public_repos returns repos filtered by license"""
+        client = GithubOrgClient("test-org")
+        self.assertEqual(client.public_repos(license="apache-2.0"), self.apache2_repos)
