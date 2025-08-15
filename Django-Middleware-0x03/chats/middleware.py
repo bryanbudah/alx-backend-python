@@ -1,34 +1,74 @@
 import os
 from datetime import datetime
+import logging
+from django.http import HttpRequest
+from typing import Callable
 
 class RequestLoggingMiddleware:
     """
-    Middleware to log each user's request to a file with:
+    Enhanced middleware to log each user's request with:
     - timestamp
     - user (authenticated or anonymous)
     - request path
+    - request method
+    - response status code
     """
 
-    def __init__(self, get_response):
-        """
-        Middleware initialization.
-        Called only once when the server starts.
-        """
+    def __init__(self, get_response: Callable):
         self.get_response = get_response
-        # Ensure log file is in project root
-        self.log_file = os.path.join(os.path.dirname(__file__), "..", "requests.log")
+        self.logger = self._setup_logger()
+        
+    def _setup_logger(self) -> logging.Logger:
+        """Configure and return a logger instance"""
+        logger = logging.getLogger('request_logger')
+        logger.setLevel(logging.INFO)
+        
+        # Create logs directory if it doesn't exist
+        log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # Log file handler
+        log_file = os.path.join(log_dir, "requests.log")
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(message)s'
+        ))
+        
+        logger.addHandler(file_handler)
+        return logger
 
-    def __call__(self, request):
-        """
-        Called for each request before the view is executed.
-        """
-        user = request.user if request.user.is_authenticated else "Anonymous"
-        log_entry = f"{datetime.now()} - User: {user} - Path: {request.path}\n"
+    def __call__(self, request: HttpRequest):
+        """Process each request and log information"""
+        try:
+            # Get user info safely
+            user = "Anonymous"
+            if hasattr(request, 'user'):
+                user = request.user.username if request.user.is_authenticated else "Anonymous"
+            
+            # Process the request
+            response = self.get_response(request)
+            
+            # Log after response is generated to include status code
+            log_data = {
+                'user': user,
+                'method': request.method,
+                'path': request.path,
+                'status': response.status_code,
+                'ip': self._get_client_ip(request)
+            }
+            
+            self.logger.info(
+                "User: %(user)s - %(method)s %(path)s - "
+                "Status: %(status)s - IP: %(ip)s", log_data
+            )
+            
+            return response
+            
+        except Exception as e:
+            self.logger.error("Error processing request: %s", str(e))
+            raise
 
-        # Append to the log file
-        with open(self.log_file, "a", encoding="utf-8") as f:
-            f.write(log_entry)
-
-        # Continue processing the request
-        response = self.get_response(request)
-        return response
+    def _get_client_ip(self, request: HttpRequest) -> str:
+        """Extract client IP address from request"""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        return x_forwarded_for.split(',')[0] if x_forwarded_for else request.META.get('REMOTE_ADDR', 'unknown')
