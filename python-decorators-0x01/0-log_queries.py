@@ -1,18 +1,34 @@
 import sqlite3
 import functools
+import time
 
 def log_queries(func):
-    """Decorator that logs SQL queries before execution"""
+    """Decorator that logs SQL queries and execution details"""
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         # Extract the query from either args or kwargs
         query = kwargs.get('query', args[0] if args else None)
         
-        if query:
-            print(f"Executing query: {query}")
+        if not query:
+            print("Warning: No query provided")
+            return func(*args, **kwargs)
+            
+        print(f"Executing query: {query}")
+        start_time = time.perf_counter()
         
-        # Call the original function
-        return func(*args, **kwargs)
+        try:
+            result = func(*args, **kwargs)
+            elapsed = time.perf_counter() - start_time
+            print(f"Query executed successfully in {elapsed:.4f} seconds")
+            print(f"Returned {len(result)} rows")
+            return result
+        except sqlite3.Error as e:
+            print(f"Query failed: {str(e)}")
+            raise
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            raise
+            
     return wrapper
 
 @log_queries
